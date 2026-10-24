@@ -1,0 +1,1 @@
+{"description":"Backend do assistente de estudo para Ray-Ban Meta: foto -> resumo falado, duvida por voz -> pesquisa em tempo real e resposta falada curta.","engines":{"node":">=20"},"main":"server.js","name":"meta2-assistente","scripts":{"start":"node server.js"},"type":"module","version":"0.1.0"}
