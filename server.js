@@ -9,7 +9,7 @@
 //
 // Variaveis de ambiente (nunca commitar valores):
 //   PORT=3103 (padrao)
-//   GEMINI_API_KEY (recomendado, gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-2.5-flash)
+//   GEMINI_API_KEY (recomendado, gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-3.8-flash)
 //     Base compativel com OpenAI do Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
 //     Se GEMINI_API_KEY e OPENAI_API_KEY existirem, o Gemini vence (gratis primeiro).
 //   OPENAI_API_KEY + OPENAI_BASE_URL (opcional, padrao api.openai.com)
@@ -60,7 +60,7 @@ function configIA() {
       provedor: "gemini",
       key: process.env.GEMINI_API_KEY,
       base: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai/").replace(/\/$/, ""),
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
     };
   }
   if (process.env.OPENAI_API_KEY) {
@@ -88,23 +88,35 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }
   const contexto = contextoPesquisa?.length
     ? `\n\nResultados de pesquisa em tempo real (use-os, nao invente):\n${contextoPesquisa.map((f, i) => `${i + 1}. ${f.titulo} — ${f.trecho} (${f.url})`).join("\n")}`
     : "";
-  const r = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-    body: JSON.stringify({
-      model, temperature: 0.2, max_tokens: 400,
-      messages: [
-        { role: "system", content: promptSistema || SYSTEM_PROMPT },
-        { role: "user", content: [...userParts.slice(0, 1), { type: "text", text: (texto + contexto) }, ...userParts.slice(1)] },
-      ],
-    }),
-  });
-  if (!r.ok) {
+  // Fallback do Gemini: o Google descontinuou o gemini-2.5-flash para usuarios
+  // novos (erro 404 "no longer available"). Se o modelo configurado der 404,
+  // tenta de novo com gemini-3.8-flash, sem o usuario precisar mexer no Railway.
+  // Isso cobre tanto o padrao antigo quanto uma variavel GEMINI_MODEL antiga.
+  const modelos = provedor === "gemini"
+    ? [...new Set([model, "gemini-3.8-flash"])]
+    : [model];
+  let ultimoErro = null;
+  for (const modeloTentativa of modelos) {
+    const r = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      body: JSON.stringify({
+        model: modeloTentativa, temperature: 0.2, max_tokens: 400,
+        messages: [
+          { role: "system", content: promptSistema || SYSTEM_PROMPT },
+          { role: "user", content: [...userParts.slice(0, 1), { type: "text", text: (texto + contexto) }, ...userParts.slice(1)] },
+        ],
+      }),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      return (j.choices?.[0]?.message?.content || "").trim();
+    }
     const detalhe = await r.text().catch(() => "");
-    throw new Error(`IA (${provedor}, modelo ${model}) retornou ${r.status}: ${detalhe.slice(0, 200)}`);
+    ultimoErro = new Error(`IA (${provedor}, modelo ${modeloTentativa}) retornou ${r.status}: ${detalhe.slice(0, 200)}`);
+    if (r.status !== 404 || modeloTentativa === modelos[modelos.length - 1]) break;
   }
-  const j = await r.json();
-  return (j.choices?.[0]?.message?.content || "").trim();
+  throw ultimoErro;
 }
 
 // Extrai o primeiro objeto JSON de um texto (a IA as vezes devolve com cercas de codigo).

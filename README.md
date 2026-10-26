@@ -100,5 +100,5 @@ isso, continua valendo o OpenVision nativo.
 ## IA grátis com Gemini (v0.5, 26/10)
 
 O backend agora usa `GEMINI_API_KEY` por padrão (Google AI Studio, grátis),
-pela base compatível com OpenAI do Gemini, modelo padrão `gemini-2.5-flash`.
+pela base compatível com OpenAI do Gemini, modelo padrão `gemini-3.8-flash`.
 A OpenAI continua funcionando como opção paga. Detalhes e passo a passo em `WEB.md`.
