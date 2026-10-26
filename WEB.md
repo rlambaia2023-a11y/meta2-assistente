@@ -12,7 +12,29 @@ do celular e use.
 - ▶️ Enviar e ouvir: o servidor analisa/resume/pesquisa e o navegador fala
   a resposta em pt-BR. Se o áudio do celular estiver saindo no óculos por
   Bluetooth, a voz sai no óculos. Se não, sai no celular.
-- Modos: Resumo, Questão de estudo, Dúvida
+- Modos: Resumo, Questão de estudo, Dúvida, Flashcards e Quiz falado (v0.4, 25/10)
+- 🗂️ Flashcards: a IA cria 5 a 8 cards da foto, frente e verso, toque para revelar
+- 🎯 Quiz falado: 5 perguntas de múltipla escolha, lidas em voz, com acertos e explicação
+- 🕘 Histórico: os últimos 30 resumos ficam salvos só neste navegador, com botão para ouvir de novo
+
+## Frente 1: ligar de verdade no Railway (25/10, pendente do usuário)
+
+O serviço já está no ar em https://meta2-assistente-production.up.railway.app,
+mas `/health` ainda mostra `ia_configurada: false` e `pesquisa_configurada: false`.
+Só o dono da conta consegue colocar as chaves, então faça assim, sem colar
+nenhuma chave no chat:
+
+1. Railway > projeto humble-reflection > serviço meta2-assistente > Variables
+2. `OPENAI_API_KEY` (obrigatória para responder de verdade)
+3. `BRAVE_API_KEY` (opcional, pesquisa em tempo real)
+4. `APP_USER` + `APP_PASSWORD` (recomendado para a versão web pública)
+5. Redeploy, depois confira `/health`: tem que mostrar `ia_configurada: true`
+6. Teste final: na página, modo Resumo, com uma foto real de apostila, e confira
+   se a voz sai no celular e, se o óculos for a saída Bluetooth, no óculos
+
+Sem essas chaves, a versão nova continua funcionando em demonstração, com
+cards e quiz de exemplo claramente marcados como exemplo, e não como conteúdo
+da sua foto.
 
 ## Limite honesto da versão web
 

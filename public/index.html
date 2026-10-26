@@ -15,7 +15,10 @@ header{background:#2a0a33;color:#fff;padding:16px} header h1{margin:0;font-size:
 main{max-width:640px;margin:0 auto;padding:16px} .card{background:#fff;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
 button{width:100%;padding:14px;border:0;border-radius:12px;font-size:17px;font-weight:700;cursor:pointer;margin-top:10px}
 .primary{background:#8e24aa;color:#fff} .secondary{background:#e1bee7;color:#2a0a33} .danger{background:#eee;color:#333}
-.modos{display:flex;gap:8px} .modos button{margin:0;padding:10px;font-size:14px;background:#f3e5f5;color:#2a0a33} .modos button.ativo{background:#8e24aa;color:#fff}
+.modos{display:flex;gap:8px;flex-wrap:wrap} .modos button{margin:0;padding:10px;font-size:14px;background:#f3e5f5;color:#2a0a33;flex:1 1 30%} .modos button.ativo{background:#8e24aa;color:#fff}
+.flash{border:1px solid #e1bee7;border-radius:12px;padding:12px;margin-top:10px;cursor:pointer} .flash b{display:block} .flash .verso{display:none;margin-top:8px;color:#333} .flash.aberto .verso{display:block} .flash.aberto{background:#f3e5f5}
+.alt{width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:16px;margin-top:8px;background:#fff;cursor:pointer;text-align:left} .alt.certa{background:#c8e6c9;border-color:#2e7d32} .alt.errada{background:#ffcdd2;border-color:#c62828}
+.hist{border-top:1px solid #eee;padding:10px 0;font-size:14px} .hist button{width:auto;padding:6px 10px;font-size:13px;margin:4px 4px 0 0}
 input[type=text]{width:100%;padding:13px;border:1px solid #ccc;border-radius:12px;font-size:16px;margin-top:10px}
 #preview{width:100%;border-radius:12px;margin-top:12px;display:none} #status{font-size:14px;min-height:20px;margin-top:8px}
 #resposta{white-space:pre-wrap;font-size:16px;line-height:1.5} small{color:#666} label{font-size:13px;color:#666}
@@ -31,6 +34,8 @@ details{font-size:14px;color:#444}
 <button data-modo="resumo" class="ativo">📄 Resumo</button>
 <button data-modo="questao-estudo">✏️ Questão de estudo</button>
 <button data-modo="duvida">❓ Dúvida</button>
+<button data-modo="flashcards">🗂️ Flashcards</button>
+<button data-modo="quiz">🎯 Quiz falado</button>
 </div>
 <label for="foto">Foto — use a câmera do celular ou escolha uma foto já tirada pelo óculos (ela fica salva na galeria pelo app Meta AI)</label>
 <input type="file" id="foto" accept="image/*" capture="environment" style="margin-top:10px;width:100%">
@@ -46,6 +51,24 @@ details{font-size:14px;color:#444}
 <div id="resposta">—</div>
 <div id="fontes" style="font-size:13px;color:#666;margin-top:8px"></div>
 <small>Se o celular estiver com o áudio saindo no óculos por Bluetooth, a voz sai no óculos. Se não, sai no alto-falante do celular.</small>
+</div>
+<div class="card" id="cardFlash" style="display:none">
+<strong>Flashcards</strong><p style="font-size:14px;color:#666;margin:6px 0">Toque em um card para ver a resposta. Passe o dedo e revise em voz alta.</p>
+<div id="flashcards"></div>
+<button class="secondary" id="btnOuvirResumo">🔊 Ouvir o resumo de novo</button>
+</div>
+<div class="card" id="cardQuiz" style="display:none">
+<strong>Quiz falado</strong><div id="quizTopo" style="font-size:14px;color:#666;margin:6px 0"></div>
+<div id="quizPergunta" style="font-size:17px;font-weight:700"></div>
+<div id="quizAlts"></div>
+<div id="quizFeedback" style="margin-top:10px;font-size:15px"></div>
+<button class="secondary" id="btnQuizVoz">🔊 Ouvir a pergunta</button>
+<button class="primary" id="btnQuizProx" style="display:none">Próxima pergunta ▶️</button>
+</div>
+<div class="card">
+<strong>Histórico</strong><p style="font-size:14px;color:#666;margin:6px 0">Fica só neste celular, no navegador. Nada vai para o servidor além da foto e da dúvida da hora.</p>
+<div id="historico"></div>
+<button class="danger" id="btnLimparHist">🗑️ Apagar histórico</button>
 </div>
 <div class="card">
 <details><summary>Como usar com o óculos + endereço do servidor</summary>
@@ -68,6 +91,55 @@ $('btnSalvarUrl').onclick=()=>{localStorage.setItem('meta2_base',$('baseUrl').va
 function base(){return ($('baseUrl').value.trim()||localStorage.getItem('meta2_base')||'').replace(/\/$/,'');}
 function falar(texto){speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(texto);u.lang='pt-BR';u.rate=1;const v=speechSynthesis.getVoices().find(v=>v.lang&&v.lang.toLowerCase().startsWith('pt'));if(v)u.voice=v;speechSynthesis.speak(u);}
 $('btnParar').onclick=()=>speechSynthesis.cancel();
+// Historico local (so neste navegador) + flashcards + quiz
+let quizAtual=[], quizIdx=0, quizAcertos=0, ultimaFala='';
+function carregarHist(){try{return JSON.parse(localStorage.getItem('meta2_historico')||'[]')}catch{return []}}
+function salvarHist(item){const h=carregarHist();h.unshift(item);localStorage.setItem('meta2_historico',JSON.stringify(h.slice(0,30)));renderHist();}
+function renderHist(){
+  const h=carregarHist();
+  $('historico').innerHTML=h.length?'': '<p style="font-size:14px;color:#666">Ainda vazio. Seu primeiro resumo vai aparecer aqui.</p>';
+  h.forEach((it,i)=>{
+    const d=document.createElement('div');d.className='hist';
+    d.innerHTML='<b>'+it.modo+'</b> · '+new Date(it.quando).toLocaleString('pt-BR')+'<br>'+(it.pergunta||'Foto sem pergunta')+'<br><span style="color:#555">'+(it.fala||'').slice(0,160)+'</span><br>';
+    const b=document.createElement('button');b.className='secondary';b.textContent='🔊 Ouvir';b.onclick=()=>falar(it.fala);d.appendChild(b);
+    $('historico').appendChild(d);
+  });
+}
+$('btnLimparHist').onclick=()=>{localStorage.removeItem('meta2_historico');renderHist();};
+function renderFlash(cards){
+  $('cardFlash').style.display=cards&&cards.length?'block':'none';
+  $('flashcards').innerHTML='';
+  (cards||[]).forEach(c=>{
+    const d=document.createElement('div');d.className='flash';
+    d.innerHTML='<b>'+c.frente+'</b><div class="verso">'+c.verso+'</div>';
+    d.onclick=()=>d.classList.toggle('aberto');$('flashcards').appendChild(d);
+  });
+}
+function mostrarQuiz(){
+  if(!quizAtual.length){$('cardQuiz').style.display='none';return;}
+  $('cardQuiz').style.display='block';
+  const q=quizAtual[quizIdx];
+  $('quizTopo').textContent='Pergunta '+(quizIdx+1)+' de '+quizAtual.length+' · Acertos: '+quizAcertos;
+  $('quizPergunta').textContent=q.pergunta;
+  $('quizFeedback').textContent='';$('btnQuizProx').style.display='none';
+  $('quizAlts').innerHTML='';
+  q.alternativas.forEach((alt,i)=>{
+    const b=document.createElement('button');b.className='alt';b.textContent=alt;
+    b.onclick=()=>{
+      document.querySelectorAll('#quizAlts .alt').forEach(x=>x.disabled=true);
+      if(i===q.correta){b.classList.add('certa');quizAcertos++;$('quizFeedback').textContent='Certa. '+(q.explicacao||'');falar('Certa. '+(q.explicacao||''));}
+      else{b.classList.add('errada');document.querySelectorAll('#quizAlts .alt')[q.correta].classList.add('certa');$('quizFeedback').textContent='Não foi essa. '+(q.explicacao||'');falar('Não foi essa. '+(q.explicacao||''));}
+      $('quizTopo').textContent='Pergunta '+(quizIdx+1)+' de '+quizAtual.length+' · Acertos: '+quizAcertos;
+      $('btnQuizProx').style.display= quizIdx+1<quizAtual.length ? 'block':'none';
+      if(quizIdx+1>=quizAtual.length){$('quizFeedback').textContent+=' Fim do quiz: '+quizAcertos+' de '+quizAtual.length+' acertos.';}
+    };
+    $('quizAlts').appendChild(b);
+  });
+}
+$('btnQuizVoz').onclick=()=>{if(quizAtual[quizIdx])falar(quizAtual[quizIdx].pergunta);};
+$('btnQuizProx').onclick=()=>{quizIdx++;mostrarQuiz();if(quizAtual[quizIdx])falar(quizAtual[quizIdx].pergunta);};
+$('btnOuvirResumo').onclick=()=>falar(ultimaFala);
+renderHist();
 $('foto').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   const img=new Image(); const url=URL.createObjectURL(f);
@@ -106,7 +178,11 @@ $('btnEnviar').onclick=async ()=>{
     $('resposta').textContent=data.fala||'—';
     $('fontes').textContent=(data.fontes&&data.fontes.length)?('Fontes: '+data.fontes.join(' ')):'';
     $('status').textContent='Tocando a resposta...';
-    falar(data.fala);
+    ultimaFala=data.fala||'';
+    renderFlash(data.cards||[]);
+    if(data.perguntas&&data.perguntas.length){quizAtual=data.perguntas;quizIdx=0;quizAcertos=0;mostrarQuiz();falar(quizAtual[0].pergunta);}
+    else{$('cardQuiz').style.display='none';falar(data.fala);}
+    salvarHist({modo,pergunta,fala:data.fala,quando:new Date().toISOString()});
   }catch(err){$('status').textContent='Erro: '+err.message+' — confira se o servidor está no ar.';}
 };
 if('serviceWorker' in navigator){/* sem SW obrigatório: página funciona sem instalar */}

@@ -60,12 +60,13 @@ no Windows. Não vou fingir que dá.
    - "Ok Vision, qual a dose máxima de lidocaína com vasoconstritor para 70 kg?"
      (aqui ele deve pesquisar e responder curto, com certeza)
 
-## Usando nosso backend como backend OpenAI do OpenVision (opcional, v0.2)
+## Usando nosso backend como backend OpenAI do OpenVision (atualizado, v0.4, 25/10)
 
 Se quiser que o OpenVision fale exatamente no nosso padrão pt-BR de estudo,
 aponte o backend OpenAI dele para este servidor:
 
-- Base URL: `http://<IP-do-seu-servidor>:3103/v1`
+- Base URL na mesma Wi-Fi ou via Tailscale: `http://<IP-do-seu-servidor>:3103/v1`
+- Base URL pública já no ar: `https://meta2-assistente-production.up.railway.app/v1`
 - Modelo: `meta2-assistente`
 - Endpoint implementado: `POST /v1/chat/completions` (formato OpenAI).
 - Com `OPENAI_API_KEY` + `BRAVE_API_KEY` no servidor, ele faz visão + pesquisa
@@ -73,6 +74,22 @@ aponte o backend OpenAI dele para este servidor:
 
 Atenção: expor esse servidor na internet exige senha/rede privada. Por padrão,
 use só na sua rede ou via Tailscale, nunca aberto sem autenticação.
+Ponto a verificar no OpenVision antes de usar o link público: se você ligar
+`APP_USER` + `APP_PASSWORD` no Railway, o endpoint `/v1` passa a exigir Basic Auth,
+e nem todo cliente OpenAI envia esse cabeçalho. Se o OpenVision não tiver campo
+para isso, use o backend na rede local/Tailscale para o teste ao vivo e deixe
+o link público protegido para a versão web.
+
+## Frente 3: o que falta para fechar (25/10, ainda pendente do usuário)
+
+1. Modelo do iPhone e versão do iOS, para confirmar se OpenVision (iOS 18+) ou
+   NoteBuddy (iOS 26+) cabe no seu aparelho.
+2. Acesso a um Mac com Xcode (15+ para OpenVision, 16+ para NoteBuddy) ou a
+   decisão de deixar a build pronta para compilar quando tiver um Mac.
+3. As chaves no Railway (frente 1), sem as quais o OpenVision com nosso backend
+   só devolve o aviso de falta de chave.
+Enquanto isso não chega, a versão web (frente 2) já funciona sem Mac e sem app
+nativo, usando a câmera do celular ou a foto do óculos na galeria.
 
 ## Passo a passo NoteBuddy (depois, para montar decks)
 

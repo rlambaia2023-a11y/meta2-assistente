@@ -49,7 +49,7 @@ async function pesquisarBrave(consulta) {
 }
 
 // Chamada de visao/texto via API compativel com OpenAI. Se nao houver chave, retorna null.
-async function chamarIA({ texto, imagemBase64, contextoPesquisa }) {
+async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return null;
   const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
@@ -68,7 +68,7 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa }) {
     body: JSON.stringify({
       model, temperature: 0.2, max_tokens: 400,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: promptSistema || SYSTEM_PROMPT },
         { role: "user", content: [...userParts.slice(0, 1), { type: "text", text: (texto + contexto) }, ...userParts.slice(1)] },
       ],
     }),
@@ -76,6 +76,15 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa }) {
   if (!r.ok) throw new Error(`IA retornou ${r.status}`);
   const j = await r.json();
   return (j.choices?.[0]?.message?.content || "").trim();
+}
+
+// Extrai o primeiro objeto JSON de um texto (a IA as vezes devolve com cercas de codigo).
+function extrairJson(texto) {
+  if (!texto) return null;
+  const limpo = String(texto).replace(/```json|```/g, "").trim();
+  const ini = limpo.indexOf("{"), fim = limpo.lastIndexOf("}");
+  if (ini < 0 || fim <= ini) return null;
+  try { return JSON.parse(limpo.slice(ini, fim + 1)); } catch { return null; }
 }
 
 function lerJson(req) {
@@ -133,11 +142,53 @@ const server = http.createServer(async (req, res) => {
       if (!body.imagem_base64 && !pergunta) return enviar(res, 400, { erro: "Envie imagem_base64 ou pergunta." });
 
       if (process.env.MODO_DEMO === "1" || !process.env.OPENAI_API_KEY) {
+        const demo = process.env.MODO_DEMO === "1";
+        const falaBase = demo
+          ? "Modo de teste: recebi sua foto. Aqui vai sair o resumo falado quando a chave da IA estiver configurada."
+          : "Falta configurar a chave da IA. No servidor, defina OPENAI_API_KEY e reinicie, que eu passo a responder de verdade.";
+        if (modo === "flashcards") {
+          return enviar(res, 200, {
+            fala: demo ? "Exemplo de demonstração, não é o conteúdo da sua foto. Com a chave configurada, aqui viram os flashcards da sua apostila." : falaBase,
+            modo, fontes: [], confianca: "demo/sem-chave",
+            cards: demo ? [
+              { frente: "Exemplo: o que é miose?", verso: "Miose é a constrição da pupila, por ação do músculo esfíncter da íris." },
+              { frente: "Exemplo: qual nervo comanda a miose?", verso: "O parassimpático, pelo nervo oculomotor." },
+              { frente: "Exemplo: o que causa midríase?", verso: "Dilatação da pupila, o oposto da miose, por ação simpática ou bloqueio parassimpático." },
+            ] : [],
+            observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+          });
+        }
+        if (modo === "quiz") {
+          return enviar(res, 200, {
+            fala: demo ? "Exemplo de demonstração, não é o conteúdo da sua foto. Com a chave configurada, aqui vira um quiz falado da sua apostila." : falaBase,
+            modo, fontes: [], confianca: "demo/sem-chave",
+            perguntas: demo ? [
+              { pergunta: "Exemplo: miose é constrição ou dilatação da pupila?", alternativas: ["Constrição", "Dilatação", "Tremor", "Desvio"], correta: 0, explicacao: "Miose é a constrição, feita pelo esfíncter da íris." },
+              { pergunta: "Exemplo: midríase é o oposto de miose?", alternativas: ["Não", "Sim", "Só em criança", "Só à noite"], correta: 1, explicacao: "Sim, midríase é a dilatação da pupila." },
+            ] : [],
+            observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+          });
+        }
         return enviar(res, 200, {
-          fala: process.env.MODO_DEMO === "1"
-            ? "Modo de teste: recebi sua foto. Aqui vai sair o resumo falado quando a chave da IA estiver configurada."
-            : "Falta configurar a chave da IA. No servidor, defina OPENAI_API_KEY e reinicie, que eu passo a responder de verdade.",
+          fala: falaBase,
           modo, fontes: [], confianca: "demo/sem-chave", observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+        });
+      }
+
+      // Modos estruturados novos (v0.4): flashcards e quiz devolvem JSON alem da fala.
+      if (modo === "flashcards" || modo === "quiz") {
+        const fontes = pergunta ? await pesquisarBrave(pergunta) : [];
+        const promptJson = "Voce devolve APENAS um objeto JSON valido, sem markdown, sem texto fora do JSON, em portugues brasileiro.";
+        const instrucaoJson = modo === "flashcards"
+          ? `A partir da foto e da pergunta, crie 5 a 8 flashcards de estudo. Formato exato: {"resumo":"uma frase do tema","cards":[{"frente":"pergunta curta","verso":"resposta curta com o porquê"}]}. Pergunta do usuario: ${pergunta || "(esta na foto)"}`
+          : `A partir da foto e da pergunta, crie 5 perguntas de multipla escolha para revisao. Formato exato: {"resumo":"uma frase do tema","perguntas":[{"pergunta":"texto","alternativas":["a","b","c","d"],"correta":0,"explicacao":"porquê curto"}]}. O indice correta vai de 0 a 3. Pergunta do usuario: ${pergunta || "(esta na foto)"}`;
+        const textoJson = await chamarIA({ texto: instrucaoJson, imagemBase64: body.imagem_base64 || null, contextoPesquisa: fontes, promptSistema: promptJson });
+        const dados = extrairJson(textoJson) || {};
+        return enviar(res, 200, {
+          fala: dados.resumo || (modo === "flashcards" ? "Flashcards prontos. Toque em um card para ver a resposta." : "Quiz pronto. Vou ler a primeira pergunta para você."),
+          modo, fontes: fontes.map((f) => f.url), confianca: fontes.length ? "com-pesquisa" : "sem-pesquisa",
+          cards: Array.isArray(dados.cards) ? dados.cards : [],
+          perguntas: Array.isArray(dados.perguntas) ? dados.perguntas : [],
         });
       }
 

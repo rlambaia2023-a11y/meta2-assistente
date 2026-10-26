@@ -77,6 +77,17 @@ curl -X POST http://localhost:3103/api/duvida -H 'Content-Type: application/json
 
 Com chave de verdade: defina `OPENAI_API_KEY` e, para pesquisa ao vivo, `BRAVE_API_KEY`, e reinicie.
 
+## Versão web (v0.4, 25/10 — evolução nas 3 frentes)
+
+Novos modos no backend e na página: Flashcards (`POST /api/foto` com
+`modo: "flashcards"`, devolve `cards`) e Quiz falado (`modo: "quiz"`, devolve
+`perguntas` com alternativas, índice da correta e explicação), além de
+histórico local dos últimos 30 resumos no navegador. Sem chave, os dois modos
+devolvem exemplos de demonstração claramente marcados, não o conteúdo da foto.
+Frente 1 (chaves no Railway) e frente 3 (OpenVision) estão detalhadas em
+`WEB.md` e `IPHONE.md`. Teste local em modo demo em 25/10: `/health` ok,
+flashcards e quiz demo ok, página com Histórico, Flashcards e Quiz falado ok.
+
 ## Versão web (v0.3, 24/10 — pedido do usuário: qualquer navegador, iPhone ou Android)
 
 Sem Mac/Xcode: abra `http://IP-DO-PC:3103` na mesma Wi-Fi, ou suba para o
