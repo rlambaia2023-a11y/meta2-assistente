@@ -39,6 +39,7 @@ details{font-size:14px;color:#444}
 </div>
 <label for="foto">Foto — use a câmera do celular ou escolha uma foto já tirada pelo óculos (ela fica salva na galeria pelo app Meta AI)</label>
 <input type="file" id="foto" accept="image/*" capture="environment" style="margin-top:10px;width:100%">
+<label style="display:block;margin-top:10px"><input type="checkbox" id="autoDesc" checked> Descrever automaticamente assim que tirar ou escolher uma foto</label>
 <img id="preview" alt="Prévia da foto">
 <input type="text" id="pergunta" placeholder="Escreva a dúvida ou a pergunta (opcional se só for resumir)">
 <button class="secondary" id="btnVoz">🎙️ Falar a dúvida</button>
@@ -151,7 +152,19 @@ $('foto').onchange=async e=>{
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);
     imagemBase64=c.toDataURL('image/jpeg',0.82);
     $('preview').src=imagemBase64; $('preview').style.display='block';
-    $('status').textContent='Foto pronta. Toque em Enviar e ouvir.'; URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url);
+    // Descrição automática: assim que a foto fica pronta, já descreve o que
+    // está nela, sem precisar tocar em Enviar. Se o modo for Flashcards/Quiz
+    // ou não houver dúvida digitada, descreve em modo resumo; senão, respeita
+    // o modo escolhido (ex.: questão de estudo com pergunta digitada).
+    if($('autoDesc').checked){
+      const perguntaAuto=$('pergunta').value.trim();
+      const modoAuto=(modo==='flashcards'||modo==='quiz'||!perguntaAuto)?'resumo':modo;
+      $('status').textContent='Foto pronta. Descrevendo o que você está vendo...';
+      analisar(modoAuto);
+    }else{
+      $('status').textContent='Foto pronta. Toque em Enviar e ouvir.';
+    }
   }; img.src=url;
 };
 $('btnVoz').onclick=()=>{
@@ -177,14 +190,17 @@ $('btnMics').onclick=async ()=>{
     $('mics').innerHTML='Microfones que o navegador enxerga:<br>'+mics.map((d,i)=>`${i+1}. ${d.label||'(sem nome — permita o microfone e tente de novo)'}`).join('<br>')+'<br><small>Se "Ray-Ban" / "Meta" não aparecer, o iPhone não está entregando o microfone do óculos ao navegador. Veja o passo a passo no chat: Bluetooth do óculos conectado como áudio, não só no app Meta AI.</small>';
   }catch(e){$('mics').textContent='Não consegui acessar o microfone: permita o acesso no navegador e tente de novo.';}
 };
-$('btnEnviar').onclick=async ()=>{
+let analisando=false;
+async function analisar(modoForcado){
+  if(analisando) return; analisando=true;
+  const modoEnvio=modoForcado||modo;
   const pergunta=$('pergunta').value.trim();
-  if(!imagemBase64 && !pergunta){$('status').textContent='Tire uma foto ou escreva uma dúvida primeiro.';return;}
+  if(!imagemBase64 && !pergunta){$('status').textContent='Tire uma foto ou escreva uma dúvida primeiro.';analisando=false;return;}
   $('status').textContent='Analisando...';
   try{
     let data;
     if(imagemBase64){
-      const r=await fetch(base()+'/api/foto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagem_base64:imagemBase64,pergunta,modo})});
+      const r=await fetch(base()+'/api/foto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagem_base64:imagemBase64,pergunta,modo:modoEnvio})});
       data=await r.json();
     }else{
       const r=await fetch(base()+'/api/duvida',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pergunta})});
@@ -198,9 +214,11 @@ $('btnEnviar').onclick=async ()=>{
     renderFlash(data.cards||[]);
     if(data.perguntas&&data.perguntas.length){quizAtual=data.perguntas;quizIdx=0;quizAcertos=0;mostrarQuiz();falar(quizAtual[0].pergunta);}
     else{$('cardQuiz').style.display='none';falar(data.fala);}
-    salvarHist({modo,pergunta,fala:data.fala,quando:new Date().toISOString()});
+    salvarHist({modo:modoEnvio,pergunta,fala:data.fala,quando:new Date().toISOString()});
   }catch(err){$('status').textContent='Erro: '+err.message+' — confira se o servidor está no ar.';}
-};
+  analisando=false;
+}
+$('btnEnviar').onclick=()=>analisar();
 if('serviceWorker' in navigator){/* sem SW obrigatório: página funciona sem instalar */}
 </script>
 </body>
