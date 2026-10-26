@@ -1,4 +1,4 @@
-// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.5 (Gemini gratis)
+// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.6 (so Gemini, sem OpenAI)
 // Sem dependencias externas: so Node 20+ (fetch nativo).
 // Arquitetura real:
 //   Oculos (camera + microfone + alto-falante) <-> App companheiro no celular
@@ -9,11 +9,9 @@
 //
 // Variaveis de ambiente (nunca commitar valores):
 //   PORT=3103 (padrao)
-//   GEMINI_API_KEY (recomendado, gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-3.8-flash)
-//     Base compativel com OpenAI do Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
-//     Se GEMINI_API_KEY e OPENAI_API_KEY existirem, o Gemini vence (gratis primeiro).
-//   OPENAI_API_KEY + OPENAI_BASE_URL (opcional, padrao api.openai.com)
-//   OPENAI_VISION_MODEL (padrao gpt-4o-mini)
+//   GEMINI_API_KEY (gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-3.8-flash)
+//     API nativa do Gemini: https://generativelanguage.googleapis.com/v1beta/models/<modelo>:generateContent
+//     Nenhuma variavel de outro provedor de IA e lida, e nenhum dado vai para outro provedor.
 //   BRAVE_API_KEY (opcional, mesma chave ja usada no PC p/ Correcao Inteligente)
 //   MODO_DEMO=1 (responde sem chamar IA, so para testar o pipeline foto->audio)
 
@@ -51,66 +49,55 @@ async function pesquisarBrave(consulta) {
   } catch { return []; }
 }
 
-// Provedor de IA: Gemini (gratis) tem prioridade; OpenAI fica como opcao paga.
-// O Gemini e chamado pela base compativel com OpenAI, entao o resto do codigo
-// (texto + imagem em image_url) nao muda.
+// Provedor de IA: so Gemini, pela API nativa generateContent.
+// GEMINI_BASE_URL existe so para teste local (apontar para um simulador);
+// em producao, deixe vazio para usar a base oficial do Google.
 function configIA() {
   if (process.env.GEMINI_API_KEY) {
     return {
       provedor: "gemini",
       key: process.env.GEMINI_API_KEY,
-      base: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai/").replace(/\/$/, ""),
+      base: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, ""),
       model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
-    };
-  }
-  if (process.env.OPENAI_API_KEY) {
-    return {
-      provedor: "openai",
-      key: process.env.OPENAI_API_KEY,
-      base: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
-      model: process.env.OPENAI_VISION_MODEL || "gpt-4o-mini",
     };
   }
   return null;
 }
 function temIA() { return Boolean(configIA()); }
 
-// Chamada de visao/texto via API compativel com OpenAI. Se nao houver chave, retorna null.
+// Chamada de visao/texto pela API nativa do Gemini. Se nao houver chave, retorna null.
 async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }) {
   const cfg = configIA();
   if (!cfg) return null;
   const { key, base, model, provedor } = cfg;
-  const userParts = [{ type: "text", text: texto }];
+  const partes = [{ text: texto }];
   if (imagemBase64) {
-    const dataUrl = imagemBase64.startsWith("data:") ? imagemBase64 : `data:image/jpeg;base64,${imagemBase64}`;
-    userParts.push({ type: "image_url", image_url: { url: dataUrl } });
+    const m = /^data:([^;]+);base64,(.*)$/.exec(imagemBase64);
+    partes.push({ inlineData: { mimeType: m ? m[1] : "image/jpeg", data: m ? m[2] : imagemBase64 } });
   }
   const contexto = contextoPesquisa?.length
     ? `\n\nResultados de pesquisa em tempo real (use-os, nao invente):\n${contextoPesquisa.map((f, i) => `${i + 1}. ${f.titulo} — ${f.trecho} (${f.url})`).join("\n")}`
     : "";
-  // Fallback do Gemini: o Google descontinuou o gemini-2.5-flash para usuarios
-  // novos (erro 404 "no longer available"). Se o modelo configurado der 404,
-  // tenta de novo com gemini-3.8-flash, sem o usuario precisar mexer no Railway.
-  // Isso cobre tanto o padrao antigo quanto uma variavel GEMINI_MODEL antiga.
-  const modelos = provedor === "gemini"
-    ? [...new Set([model, "gemini-3.8-flash"])]
-    : [model];
+  if (contexto) partes[0] = { text: texto + contexto };
+  const ehJson = (promptSistema || "").includes("APENAS um objeto JSON");
+  // Fallback do Gemini: se o modelo configurado der 404, tenta de novo com
+  // gemini-3.8-flash, sem o usuario precisar mexer no Railway.
+  const modelos = [...new Set([model, "gemini-3.8-flash"])];
   let ultimoErro = null;
   for (const modeloTentativa of modelos) {
-    const r = await fetch(`${base}/chat/completions`, {
+    const r = await fetch(`${base}/models/${modeloTentativa}:generateContent?key=${encodeURIComponent(key)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: modeloTentativa, temperature: 0.2, max_tokens: 400,
-        messages: [
-          { role: "system", content: promptSistema || SYSTEM_PROMPT },
-          { role: "user", content: [...userParts.slice(0, 1), { type: "text", text: (texto + contexto) }, ...userParts.slice(1)] },
-        ],
+        systemInstruction: { parts: [{ text: promptSistema || SYSTEM_PROMPT }] },
+        contents: [{ parts: partes }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 400, ...(ehJson ? { responseMimeType: "application/json" } : {}) },
       }),
     });
     if (r.ok) {
       const j = await r.json();
-      return (j.choices?.[0]?.message?.content || "").trim();
+      const textoResposta = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+      return textoResposta;
     }
     const detalhe = await r.text().catch(() => "");
     ultimoErro = new Error(`IA (${provedor}, modelo ${modeloTentativa}) retornou ${r.status}: ${detalhe.slice(0, 200)}`);
@@ -189,7 +176,7 @@ const server = http.createServer(async (req, res) => {
         const demo = process.env.MODO_DEMO === "1";
         const falaBase = demo
           ? "Modo de teste: recebi sua foto. Aqui vai sair o resumo falado quando a chave da IA estiver configurada."
-          : "Falta configurar a chave da IA. No servidor, defina GEMINI_API_KEY (gratis) ou OPENAI_API_KEY e reinicie, que eu passo a responder de verdade.";
+          : "Falta configurar a chave da IA. No servidor, defina GEMINI_API_KEY (gratis, no Google AI Studio) e reinicie, que eu passo a responder de verdade.";
         if (modo === "flashcards") {
           return enviar(res, 200, {
             fala: demo ? "Exemplo de demonstração, não é o conteúdo da sua foto. Com a chave configurada, aqui viram os flashcards da sua apostila." : falaBase,
@@ -199,7 +186,7 @@ const server = http.createServer(async (req, res) => {
               { frente: "Exemplo: qual nervo comanda a miose?", verso: "O parassimpático, pelo nervo oculomotor." },
               { frente: "Exemplo: o que causa midríase?", verso: "Dilatação da pupila, o oposto da miose, por ação simpática ou bloqueio parassimpático." },
             ] : [],
-            observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+            observacao: "Configure GEMINI_API_KEY (gratis) e, para pesquisa em tempo real, BRAVE_API_KEY.",
           });
         }
         if (modo === "quiz") {
@@ -210,12 +197,12 @@ const server = http.createServer(async (req, res) => {
               { pergunta: "Exemplo: miose é constrição ou dilatação da pupila?", alternativas: ["Constrição", "Dilatação", "Tremor", "Desvio"], correta: 0, explicacao: "Miose é a constrição, feita pelo esfíncter da íris." },
               { pergunta: "Exemplo: midríase é o oposto de miose?", alternativas: ["Não", "Sim", "Só em criança", "Só à noite"], correta: 1, explicacao: "Sim, midríase é a dilatação da pupila." },
             ] : [],
-            observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+            observacao: "Configure GEMINI_API_KEY (gratis) e, para pesquisa em tempo real, BRAVE_API_KEY.",
           });
         }
         return enviar(res, 200, {
           fala: falaBase,
-          modo, fontes: [], confianca: "demo/sem-chave", observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+          modo, fontes: [], confianca: "demo/sem-chave", observacao: "Configure GEMINI_API_KEY (gratis) e, para pesquisa em tempo real, BRAVE_API_KEY.",
         });
       }
 
@@ -262,8 +249,9 @@ const server = http.createServer(async (req, res) => {
       return enviar(res, 200, { fala, fontes: fontes.map((f) => f.url), confianca: fontes.length ? "com-pesquisa" : "sem-pesquisa" });
     }
 
-    // POST /v1/chat/completions — compatibilidade OpenAI para o OpenVision.
-    // Permite apontar o backend "OpenAI" do OpenVision para este servidor:
+    // POST /v1/chat/completions — shim de formato para o OpenVision, provedor so Gemini.
+    // O OpenVision tem um campo de backend no formato chat/completions; por dentro,
+    // esta rota converte a mensagem e chama so o Gemini nativo, nada vai para outro provedor:
     // base URL = http://<seu-servidor>:3103/v1  (ou o /api/foto direto, se preferir).
     // O OpenVision ja fala o texto de volta no alto-falante do oculos.
     if (req.method === "POST" && urlPath === "/v1/chat/completions") {

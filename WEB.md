@@ -25,7 +25,7 @@ Só o dono da conta consegue colocar as chaves, então faça assim, sem colar
 nenhuma chave no chat:
 
 1. Railway > projeto humble-reflection > serviço meta2-assistente > Variables
-2. `OPENAI_API_KEY` (obrigatória para responder de verdade)
+2. `GEMINI_API_KEY` (obrigatória para responder de verdade, gratis no Google AI Studio)
 3. `BRAVE_API_KEY` (opcional, pesquisa em tempo real)
 4. `APP_USER` + `APP_PASSWORD` (recomendado para a versão web pública)
 5. Redeploy, depois confira `/health`: tem que mostrar `ia_configurada: true`
@@ -72,7 +72,7 @@ não tem banco.
 2. **Railway:** New Project > Deploy from GitHub Repo > selecione o repo.
    O Railway detecta o Dockerfile e inicia o deploy sozinho.
 3. **Variáveis** (Railway > serviço > Variables):
-   - `OPENAI_API_KEY` — só depois do teste em demo, para não gastar à toa
+   - `GEMINI_API_KEY` — só depois do teste em demo
    - `BRAVE_API_KEY` — opcional, pesquisa em tempo real
    - `APP_USER` + `APP_PASSWORD` — **recomendado**: sem senha, qualquer pessoa
      com o link usa sua chave de IA. Com senha, o navegador pede login antes
@@ -84,7 +84,7 @@ não tem banco.
    - Abra o link: sem senha configurada, a página abre; com senha, pede login
    - `https://SEU-LINK/health` mostra `ok: true`
    - Na página, modo Resumo, sem foto, com uma dúvida de teste: em modo demo
-     (sem `OPENAI_API_KEY`) ele avisa que falta a chave — isso é o esperado
+     (sem `GEMINI_API_KEY`) ele avisa que falta a chave — isso é o esperado
    - Depois de colocar as chaves, repita com uma foto real e confira se a
      voz sai no celular (e no óculos, se ele for a saída Bluetooth)
 6. **No iPhone:** Safari > Compartilhar > Adicionar à Tela de Início, vira "app".
@@ -121,5 +121,4 @@ isso, continua valendo o OpenVision nativo.
 Limites do plano grátis: há limite de requisições por minuto/dia (varia por
 modelo e aparece no painel do AI Studio), e no plano grátis o Google pode usar
 prompts/respostas para melhorar os produtos — não envie dados sensíveis.
-Se as duas chaves existirem, o Gemini vence; para voltar à OpenAI, apague a
-variável `GEMINI_API_KEY` no Railway.
+Não há mais volta à OpenAI neste backend: o provedor é só Gemini. Se houver variáveis OPENAI_* antigas no Railway, apague-as, pois são ignoradas. Na v0.6, a chamada interna também deixou de usar a base compatível com OpenAI do Gemini e passou a usar a API nativa `generateContent`.

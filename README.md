@@ -75,7 +75,7 @@ curl http://localhost:3103/health
 curl -X POST http://localhost:3103/api/duvida -H 'Content-Type: application/json' -d '{"pergunta":"teste"}'
 ```
 
-Com chave de verdade: defina `OPENAI_API_KEY` e, para pesquisa ao vivo, `BRAVE_API_KEY`, e reinicie.
+Com chave de verdade: defina `GEMINI_API_KEY` (gratis, Google AI Studio) e, para pesquisa ao vivo, `BRAVE_API_KEY`, e reinicie.
 
 ## Versão web (v0.4, 25/10 — evolução nas 3 frentes)
 
@@ -97,8 +97,9 @@ galeria), dúvida por voz/digitada, resposta falada em pt-BR via voz do
 navegador. Limite: navegador não acessa a câmera do óculos ao vivo — para
 isso, continua valendo o OpenVision nativo.
 
-## IA grátis com Gemini (v0.5, 26/10)
+## IA grátis com Gemini, sem OpenAI (v0.6, 26/10)
 
-O backend agora usa `GEMINI_API_KEY` por padrão (Google AI Studio, grátis),
-pela base compatível com OpenAI do Gemini, modelo padrão `gemini-3.8-flash`.
-A OpenAI continua funcionando como opção paga. Detalhes e passo a passo em `WEB.md`.
+O backend usa só `GEMINI_API_KEY` (Google AI Studio, grátis), pela API nativa
+do Gemini (`generateContent`), modelo padrão `gemini-3.8-flash`. Não há
+provedor OpenAI, nem chamada para outro provedor de IA. Detalhes e passo a
+passo em `WEB.md`.
