@@ -1,4 +1,4 @@
-// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.1
+// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.5 (Gemini gratis)
 // Sem dependencias externas: so Node 20+ (fetch nativo).
 // Arquitetura real:
 //   Oculos (camera + microfone + alto-falante) <-> App companheiro no celular
@@ -9,6 +9,9 @@
 //
 // Variaveis de ambiente (nunca commitar valores):
 //   PORT=3103 (padrao)
+//   GEMINI_API_KEY (recomendado, gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-2.5-flash)
+//     Base compativel com OpenAI do Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
+//     Se GEMINI_API_KEY e OPENAI_API_KEY existirem, o Gemini vence (gratis primeiro).
 //   OPENAI_API_KEY + OPENAI_BASE_URL (opcional, padrao api.openai.com)
 //   OPENAI_VISION_MODEL (padrao gpt-4o-mini)
 //   BRAVE_API_KEY (opcional, mesma chave ja usada no PC p/ Correcao Inteligente)
@@ -48,12 +51,35 @@ async function pesquisarBrave(consulta) {
   } catch { return []; }
 }
 
+// Provedor de IA: Gemini (gratis) tem prioridade; OpenAI fica como opcao paga.
+// O Gemini e chamado pela base compativel com OpenAI, entao o resto do codigo
+// (texto + imagem em image_url) nao muda.
+function configIA() {
+  if (process.env.GEMINI_API_KEY) {
+    return {
+      provedor: "gemini",
+      key: process.env.GEMINI_API_KEY,
+      base: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai/").replace(/\/$/, ""),
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      provedor: "openai",
+      key: process.env.OPENAI_API_KEY,
+      base: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
+      model: process.env.OPENAI_VISION_MODEL || "gpt-4o-mini",
+    };
+  }
+  return null;
+}
+function temIA() { return Boolean(configIA()); }
+
 // Chamada de visao/texto via API compativel com OpenAI. Se nao houver chave, retorna null.
 async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
+  const cfg = configIA();
+  if (!cfg) return null;
+  const { key, base, model, provedor } = cfg;
   const userParts = [{ type: "text", text: texto }];
   if (imagemBase64) {
     const dataUrl = imagemBase64.startsWith("data:") ? imagemBase64 : `data:image/jpeg;base64,${imagemBase64}`;
@@ -73,7 +99,10 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }
       ],
     }),
   });
-  if (!r.ok) throw new Error(`IA retornou ${r.status}`);
+  if (!r.ok) {
+    const detalhe = await r.text().catch(() => "");
+    throw new Error(`IA (${provedor}, modelo ${model}) retornou ${r.status}: ${detalhe.slice(0, 200)}`);
+  }
   const j = await r.json();
   return (j.choices?.[0]?.message?.content || "").trim();
 }
@@ -131,7 +160,8 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === "GET" && req.url === "/health") {
-      return enviar(res, 200, { ok: true, servico: "meta2-assistente", ia_configurada: Boolean(process.env.OPENAI_API_KEY), pesquisa_configurada: Boolean(process.env.BRAVE_API_KEY), modo_demo: process.env.MODO_DEMO === "1" });
+      const cfg = configIA();
+      return enviar(res, 200, { ok: true, servico: "meta2-assistente", ia_configurada: Boolean(cfg), provedor: cfg ? cfg.provedor : "nenhum", modelo: cfg ? cfg.model : null, pesquisa_configurada: Boolean(process.env.BRAVE_API_KEY), modo_demo: process.env.MODO_DEMO === "1" });
     }
 
     // POST /api/foto — { imagem_base64, pergunta?, modo: "resumo" | "questao-estudo" | "duvida" }
@@ -141,11 +171,11 @@ const server = http.createServer(async (req, res) => {
       const pergunta = (body.pergunta || "").trim();
       if (!body.imagem_base64 && !pergunta) return enviar(res, 400, { erro: "Envie imagem_base64 ou pergunta." });
 
-      if (process.env.MODO_DEMO === "1" || !process.env.OPENAI_API_KEY) {
+      if (process.env.MODO_DEMO === "1" || !temIA()) {
         const demo = process.env.MODO_DEMO === "1";
         const falaBase = demo
           ? "Modo de teste: recebi sua foto. Aqui vai sair o resumo falado quando a chave da IA estiver configurada."
-          : "Falta configurar a chave da IA. No servidor, defina OPENAI_API_KEY e reinicie, que eu passo a responder de verdade.";
+          : "Falta configurar a chave da IA. No servidor, defina GEMINI_API_KEY (gratis) ou OPENAI_API_KEY e reinicie, que eu passo a responder de verdade.";
         if (modo === "flashcards") {
           return enviar(res, 200, {
             fala: demo ? "Exemplo de demonstração, não é o conteúdo da sua foto. Com a chave configurada, aqui viram os flashcards da sua apostila." : falaBase,
@@ -155,7 +185,7 @@ const server = http.createServer(async (req, res) => {
               { frente: "Exemplo: qual nervo comanda a miose?", verso: "O parassimpático, pelo nervo oculomotor." },
               { frente: "Exemplo: o que causa midríase?", verso: "Dilatação da pupila, o oposto da miose, por ação simpática ou bloqueio parassimpático." },
             ] : [],
-            observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+            observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
           });
         }
         if (modo === "quiz") {
@@ -166,12 +196,12 @@ const server = http.createServer(async (req, res) => {
               { pergunta: "Exemplo: miose é constrição ou dilatação da pupila?", alternativas: ["Constrição", "Dilatação", "Tremor", "Desvio"], correta: 0, explicacao: "Miose é a constrição, feita pelo esfíncter da íris." },
               { pergunta: "Exemplo: midríase é o oposto de miose?", alternativas: ["Não", "Sim", "Só em criança", "Só à noite"], correta: 1, explicacao: "Sim, midríase é a dilatação da pupila." },
             ] : [],
-            observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+            observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
           });
         }
         return enviar(res, 200, {
           fala: falaBase,
-          modo, fontes: [], confianca: "demo/sem-chave", observacao: "Configure OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
+          modo, fontes: [], confianca: "demo/sem-chave", observacao: "Configure GEMINI_API_KEY (gratis) ou OPENAI_API_KEY (e BRAVE_API_KEY para pesquisa em tempo real).",
         });
       }
 
@@ -210,7 +240,7 @@ const server = http.createServer(async (req, res) => {
       if (process.env.MODO_DEMO === "1") {
         return enviar(res, 200, { fala: "Modo de teste: recebi sua duvida. Aqui vai sair a resposta pesquisada em tempo real quando a chave da IA estiver configurada.", fontes: [], confianca: "demo" });
       }
-      if (!process.env.OPENAI_API_KEY) {
+      if (!temIA()) {
         return enviar(res, 200, { fala: "Ainda falta configurar a chave da IA para eu pesquisar e responder de verdade.", fontes: [], confianca: "sem-chave" });
       }
       const fontes = await pesquisarBrave(pergunta);
@@ -237,7 +267,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       let fala;
-      if (process.env.MODO_DEMO === "1" || !process.env.OPENAI_API_KEY) {
+      if (process.env.MODO_DEMO === "1" || !temIA()) {
         fala = "Modo de teste do seu assistente de estudo: recebi sua foto ou duvida. Com a chave da IA configurada, aqui vai o resumo falado em portugues, curto e humanizado.";
       } else {
         const fontes = pergunta ? await pesquisarBrave(pergunta) : [];

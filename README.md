@@ -96,3 +96,9 @@ Página em `public/index.html`: foto (câmera do celular ou foto do óculos na
 galeria), dúvida por voz/digitada, resposta falada em pt-BR via voz do
 navegador. Limite: navegador não acessa a câmera do óculos ao vivo — para
 isso, continua valendo o OpenVision nativo.
+
+## IA grátis com Gemini (v0.5, 26/10)
+
+O backend agora usa `GEMINI_API_KEY` por padrão (Google AI Studio, grátis),
+pela base compatível com OpenAI do Gemini, modelo padrão `gemini-2.5-flash`.
+A OpenAI continua funcionando como opção paga. Detalhes e passo a passo em `WEB.md`.

@@ -98,3 +98,28 @@ erros mais comuns são repo sem o Dockerfile na raiz ou variável com espaço.
 - `POST /api/foto` e `POST /v1/chat/completions` em modo demo devolvem
   o campo `fala` no formato esperado pelo front-end
 - Falta testar com chave real + voz no celular do usuário (próximo passo)
+
+## Versão web (v0.5, 26/10 — Gemini grátis, sem OpenAI paga)
+
+Sem Mac/Xcode e sem conta OpenAI paga: abra `http://IP-DO-PC:3103` na mesma Wi-Fi, ou suba para o
+Railway e abra o link público em qualquer celular. Guia completo em `WEB.md`.
+Página em `public/index.html`: foto (câmera do celular ou foto do óculos na
+galeria), dúvida por voz/digitada, resposta falada em pt-BR via voz do
+navegador. Limite: navegador não acessa a câmera do óculos ao vivo — para
+isso, continua valendo o OpenVision nativo.
+
+### Chave grátis em 3 passos (só no Railway, nunca no chat)
+
+1. Entre em aistudio.google.com/apikey com sua conta Google
+2. Clique em Create API key e copie a chave
+3. No Railway (projeto humble-reflection > serviço meta2-assistente > Variables),
+   crie `GEMINI_API_KEY` com essa chave. Opcional: `GEMINI_MODEL=gemini-2.5-flash`
+   (já é o padrão) e `BRAVE_API_KEY` para pesquisa em tempo real.
+4. O Railway redeploya sozinho. Confira `/health`: tem que mostrar
+   `ia_configurada: true` e `provedor: "gemini"`.
+
+Limites do plano grátis: há limite de requisições por minuto/dia (varia por
+modelo e aparece no painel do AI Studio), e no plano grátis o Google pode usar
+prompts/respostas para melhorar os produtos — não envie dados sensíveis.
+Se as duas chaves existirem, o Gemini vence; para voltar à OpenAI, apague a
+variável `GEMINI_API_KEY` no Railway.
