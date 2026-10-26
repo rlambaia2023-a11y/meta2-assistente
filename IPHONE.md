@@ -48,7 +48,8 @@ no Windows. Não vou fingir que dá.
    > confie no seu certificado de desenvolvedor.
 5. No app OpenVision > Ajustes:
    - Backend para começar: **Gemini Live** (voz + visão ao vivo, precisa de chave
-     Gemini em https://aistudio.google.com/apikey) — ou **OpenAI** se preferir.
+     Gemini em https://aistudio.google.com/apikey). Nosso backend também é só
+     Gemini, sem OpenAI.
    - Voz: Apple (padrão) ou Kokoro local, se quiser offline.
    - Busca: coloque a chave Tavily gratuita; sem ela, usa DuckDuckGo.
    - Cole o prompt de `prompts.md` deste projeto onde o app permitir
@@ -60,23 +61,25 @@ no Windows. Não vou fingir que dá.
    - "Ok Vision, qual a dose máxima de lidocaína com vasoconstritor para 70 kg?"
      (aqui ele deve pesquisar e responder curto, com certeza)
 
-## Usando nosso backend como backend OpenAI do OpenVision (atualizado, v0.4, 25/10)
+## Usando nosso backend (só Gemini) no OpenVision (atualizado, v0.6, 26/10)
 
 Se quiser que o OpenVision fale exatamente no nosso padrão pt-BR de estudo,
-aponte o backend OpenAI dele para este servidor:
+aponte o campo de backend compatível com OpenAI dele para este servidor.
+É só o formato da API: por dentro, tudo vai para o Gemini, nada vai para
+a OpenAI:
 
 - Base URL na mesma Wi-Fi ou via Tailscale: `http://<IP-do-seu-servidor>:3103/v1`
 - Base URL pública já no ar: `https://meta2-assistente-production.up.railway.app/v1`
 - Modelo: `meta2-assistente`
-- Endpoint implementado: `POST /v1/chat/completions` (formato OpenAI).
-- Com `OPENAI_API_KEY` + `BRAVE_API_KEY` no servidor, ele faz visão + pesquisa
+- Endpoint implementado: `POST /v1/chat/completions` (só o formato, por dentro chama o Gemini nativo).
+- Com `GEMINI_API_KEY` + `BRAVE_API_KEY` no servidor, ele faz visão + pesquisa
   em tempo real e devolve só o texto falado. Sem chave, devolve aviso em modo demo.
 
 Atenção: expor esse servidor na internet exige senha/rede privada. Por padrão,
 use só na sua rede ou via Tailscale, nunca aberto sem autenticação.
 Ponto a verificar no OpenVision antes de usar o link público: se você ligar
 `APP_USER` + `APP_PASSWORD` no Railway, o endpoint `/v1` passa a exigir Basic Auth,
-e nem todo cliente OpenAI envia esse cabeçalho. Se o OpenVision não tiver campo
+e nem todo cliente nesse formato envia esse cabeçalho. Se o OpenVision não tiver campo
 para isso, use o backend na rede local/Tailscale para o teste ao vivo e deixe
 o link público protegido para a versão web.
 
@@ -109,4 +112,4 @@ nativo, usando a câmera do celular ou a foto do óculos na galeria.
 2. Você tem acesso a um Mac com Xcode, ou prefere que eu deixe tudo pronto
    para compilar quando tiver?
 3. Backend: prefere Gemini Live direto no OpenVision, ou nosso servidor
-   com Brave + OpenAI (precisa das chaves no servidor)?
+   com Brave + Gemini (precisa das chaves no servidor)?
