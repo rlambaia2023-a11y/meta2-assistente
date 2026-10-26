@@ -113,7 +113,7 @@ isso, continua valendo o OpenVision nativo.
 1. Entre em aistudio.google.com/apikey com sua conta Google
 2. Clique em Create API key e copie a chave
 3. No Railway (projeto humble-reflection > serviço meta2-assistente > Variables),
-   crie `GEMINI_API_KEY` com essa chave. Opcional: `GEMINI_MODEL=gemini-3.8-flash`
+   crie `GEMINI_API_KEY` com essa chave. Opcional: `GEMINI_MODEL=gemini-2.5-flash-lite` (já é o padrão da v0.7, o mais barato do plano grátis)
    (já é o padrão) e `BRAVE_API_KEY` para pesquisa em tempo real.
 4. O Railway redeploya sozinho. Confira `/health`: tem que mostrar
    `ia_configurada: true` e `provedor: "gemini"`.

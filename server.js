@@ -1,4 +1,4 @@
-// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.6 (so Gemini, sem OpenAI)
+// Assistente de ESTUDO para Ray-Ban Meta (2a geracao) — versao 0.7 (so Gemini, melhorias gratis)
 // Sem dependencias externas: so Node 20+ (fetch nativo).
 // Arquitetura real:
 //   Oculos (camera + microfone + alto-falante) <-> App companheiro no celular
@@ -9,15 +9,18 @@
 //
 // Variaveis de ambiente (nunca commitar valores):
 //   PORT=3103 (padrao)
-//   GEMINI_API_KEY (gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-3.8-flash)
+//   GEMINI_API_KEY (gratis no Google AI Studio) + GEMINI_MODEL (padrao gemini-2.5-flash-lite, o mais barato do plano gratis)
 //     API nativa do Gemini: https://generativelanguage.googleapis.com/v1beta/models/<modelo>:generateContent
 //     Nenhuma variavel de outro provedor de IA e lida, e nenhum dado vai para outro provedor.
+//   CACHE_MINUTOS (opcional, padrao 60): tempo do cache de respostas em memoria.
+//     Mesma foto + mesma pergunta = resposta do cache, sem gastar cota da IA.
 //   BRAVE_API_KEY (opcional, mesma chave ja usada no PC p/ Correcao Inteligente)
 //   MODO_DEMO=1 (responde sem chamar IA, so para testar o pipeline foto->audio)
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "public");
@@ -58,18 +61,47 @@ function configIA() {
       provedor: "gemini",
       key: process.env.GEMINI_API_KEY,
       base: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, ""),
-      model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",
     };
   }
   return null;
 }
 function temIA() { return Boolean(configIA()); }
 
+// Cache de respostas em memoria (só neste processo, sem banco): mesma foto +
+// mesma pergunta + mesmo modo = devolve a resposta guardada, sem chamar a IA
+// e sem gastar cota do plano gratis. TTL padrao 60 min, maximo 50 itens.
+const CACHE_TTL_MS = (Number(process.env.CACHE_MINUTOS || 60) || 60) * 60 * 1000;
+const cacheRespostas = new Map();
+let cacheAcertos = 0, cacheErros = 0;
+function chaveCache({ texto, imagemBase64, promptSistema }) {
+  const imgHash = imagemBase64 ? crypto.createHash("sha256").update(imagemBase64).digest("hex") : "sem-foto";
+  return crypto.createHash("sha256").update(`${promptSistema || SYSTEM_PROMPT}\n${texto}\n${imgHash}`).digest("hex");
+}
+function lerCache(chave) {
+  const item = cacheRespostas.get(chave);
+  if (!item) { cacheErros++; return null; }
+  if (Date.now() - item.quando > CACHE_TTL_MS) { cacheRespostas.delete(chave); cacheErros++; return null; }
+  cacheAcertos++;
+  return item.texto;
+}
+function guardarCache(chave, texto) {
+  if (!texto) return;
+  if (cacheRespostas.size >= 50) cacheRespostas.delete(cacheRespostas.keys().next().value);
+  cacheRespostas.set(chave, { texto, quando: Date.now() });
+}
+
 // Chamada de visao/texto pela API nativa do Gemini. Se nao houver chave, retorna null.
 async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }) {
   const cfg = configIA();
   if (!cfg) return null;
-  const { key, base, model, provedor } = cfg;
+  const { key, base, provedor } = cfg;
+  // Cache antes de qualquer chamada: contexto de pesquisa (Brave) fica de fora
+  // da chave de proposito, para a mesma pergunta/foto acertar o cache mesmo
+  // que os resultados da pesquisa mudem um pouco.
+  const chave = chaveCache({ texto, imagemBase64, promptSistema });
+  const doCache = lerCache(chave);
+  if (doCache) return doCache;
   const partes = [{ text: texto }];
   if (imagemBase64) {
     const m = /^data:([^;]+);base64,(.*)$/.exec(imagemBase64);
@@ -80,9 +112,17 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }
     : "";
   if (contexto) partes[0] = { text: texto + contexto };
   const ehJson = (promptSistema || "").includes("APENAS um objeto JSON");
-  // Fallback do Gemini: se o modelo configurado der 404, tenta de novo com
-  // gemini-3.8-flash, sem o usuario precisar mexer no Railway.
-  const modelos = [...new Set([model, "gemini-3.8-flash"])];
+  // Melhorias gratis, nesta ordem:
+  // 1. Flash-Lite primeiro: gemini-2.5-flash-lite e o modelo mais barato do
+  //    plano gratis. O gemini-2.5-flash foi descontinuado para usuarios novos,
+  //    entao, se ele estiver configurado no Railway, vira Lite direto, sem
+  //    gastar uma chamada que daria 404.
+  // 2. Fallback so em 404: se o modelo der 404, tenta gemini-3.8-flash.
+  // 3. Sem retry em cota: 429 (ou erro de quota) para tudo na hora, sem
+  //    tentar outro modelo — tentar de novo so queimaria mais cota e o erro
+  //    voltaria igual. O usuario recebe a mensagem clara de cota e espera.
+  const modeloConfigurado = cfg.model === "gemini-2.5-flash" ? "gemini-2.5-flash-lite" : cfg.model;
+  const modelos = [...new Set([modeloConfigurado, "gemini-2.5-flash-lite", "gemini-3.8-flash"])];
   let ultimoErro = null;
   for (const modeloTentativa of modelos) {
     const r = await fetch(`${base}/models/${modeloTentativa}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -97,9 +137,14 @@ async function chamarIA({ texto, imagemBase64, contextoPesquisa, promptSistema }
     if (r.ok) {
       const j = await r.json();
       const textoResposta = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+      guardarCache(chave, textoResposta);
       return textoResposta;
     }
     const detalhe = await r.text().catch(() => "");
+    const ehCota = r.status === 429 || /quota|RESOURCE_EXHAUSTED|rate.limit/i.test(detalhe);
+    if (ehCota) {
+      throw new Error("Cota do plano gratis do Gemini acabou (429). Nao tentei de novo para nao gastar mais cota: espere o reset do plano gratis e tente novamente.");
+    }
     ultimoErro = new Error(`IA (${provedor}, modelo ${modeloTentativa}) retornou ${r.status}: ${detalhe.slice(0, 200)}`);
     if (r.status !== 404 || modeloTentativa === modelos[modelos.length - 1]) break;
   }
@@ -162,7 +207,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && urlPath === "/health") {
       const cfg = configIA();
-      return enviar(res, 200, { ok: true, servico: "meta2-assistente", ia_configurada: Boolean(cfg), provedor: cfg ? cfg.provedor : "nenhum", modelo: cfg ? cfg.model : null, pesquisa_configurada: Boolean(process.env.BRAVE_API_KEY), modo_demo: process.env.MODO_DEMO === "1" });
+      return enviar(res, 200, { ok: true, servico: "meta2-assistente", ia_configurada: Boolean(cfg), provedor: cfg ? cfg.provedor : "nenhum", modelo: cfg ? cfg.model : null, pesquisa_configurada: Boolean(process.env.BRAVE_API_KEY), modo_demo: process.env.MODO_DEMO === "1", cache: { itens: cacheRespostas.size, acertos: cacheAcertos, erros: cacheErros } });
     }
 
     // POST /api/foto — { imagem_base64, pergunta?, modo: "resumo" | "questao-estudo" | "duvida" }

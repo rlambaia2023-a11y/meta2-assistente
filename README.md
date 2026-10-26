@@ -97,9 +97,9 @@ galeria), dúvida por voz/digitada, resposta falada em pt-BR via voz do
 navegador. Limite: navegador não acessa a câmera do óculos ao vivo — para
 isso, continua valendo o OpenVision nativo.
 
-## IA grátis com Gemini, sem OpenAI (v0.6, 26/10)
+## IA grátis com Gemini, sem OpenAI (v0.6, 26/10) + melhorias grátis (v0.7, 26/10)
 
 O backend usa só `GEMINI_API_KEY` (Google AI Studio, grátis), pela API nativa
-do Gemini (`generateContent`), modelo padrão `gemini-3.8-flash`. Não há
+do Gemini (`generateContent`), modelo padrão `gemini-2.5-flash-lite` (Flash-Lite, o mais barato do plano grátis; se der 404, cai para `gemini-3.8-flash`). v0.7 ainda acrescenta: cache em memória (mesma foto + mesma pergunta não chama a IA de novo, 60 min) e sem retry em cota (429 para na hora, com aviso claro, em vez de queimar mais cota tentando de novo). Não há
 provedor OpenAI, nem chamada para outro provedor de IA. Detalhes e passo a
 passo em `WEB.md`.
