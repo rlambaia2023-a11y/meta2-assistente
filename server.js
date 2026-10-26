@@ -132,6 +132,8 @@ function enviar(res, status, obj) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    // Usar so o caminho, sem query (?nocache=...), para /health e APIs nao darem 404.
+    const urlPath = new URL(req.url, "http://localhost").pathname;
     // Senha opcional (igual ao sistema de correcao): se APP_USER + APP_PASSWORD
     // estiverem definidos no Railway, tudo exceto /health exige Basic Auth.
     // Sem elas, o site fica aberto — use assim so para testar em modo demo,
@@ -159,13 +161,13 @@ const server = http.createServer(async (req, res) => {
         }
       }
     }
-    if (req.method === "GET" && req.url === "/health") {
+    if (req.method === "GET" && urlPath === "/health") {
       const cfg = configIA();
       return enviar(res, 200, { ok: true, servico: "meta2-assistente", ia_configurada: Boolean(cfg), provedor: cfg ? cfg.provedor : "nenhum", modelo: cfg ? cfg.model : null, pesquisa_configurada: Boolean(process.env.BRAVE_API_KEY), modo_demo: process.env.MODO_DEMO === "1" });
     }
 
     // POST /api/foto — { imagem_base64, pergunta?, modo: "resumo" | "questao-estudo" | "duvida" }
-    if (req.method === "POST" && req.url === "/api/foto") {
+    if (req.method === "POST" && urlPath === "/api/foto") {
       const body = await lerJson(req);
       const modo = body.modo || "resumo";
       const pergunta = (body.pergunta || "").trim();
@@ -233,7 +235,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // POST /api/duvida — so voz/texto, sem foto: { pergunta }
-    if (req.method === "POST" && req.url === "/api/duvida") {
+    if (req.method === "POST" && urlPath === "/api/duvida") {
       const body = await lerJson(req);
       const pergunta = (body.pergunta || "").trim();
       if (!pergunta) return enviar(res, 400, { erro: "Envie pergunta." });
@@ -252,7 +254,7 @@ const server = http.createServer(async (req, res) => {
     // Permite apontar o backend "OpenAI" do OpenVision para este servidor:
     // base URL = http://<seu-servidor>:3103/v1  (ou o /api/foto direto, se preferir).
     // O OpenVision ja fala o texto de volta no alto-falante do oculos.
-    if (req.method === "POST" && req.url === "/v1/chat/completions") {
+    if (req.method === "POST" && urlPath === "/v1/chat/completions") {
       const body = await lerJson(req);
       const messages = Array.isArray(body.messages) ? body.messages : [];
       let pergunta = "", imagemBase64 = null;
